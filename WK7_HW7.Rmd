@@ -1,0 +1,170 @@
+---
+title: "WK7_HW_7"
+author: "Anon Skywalker"
+date: "10/5/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+set.seed(12345)
+rm(list = ls())
+setwd("C:/Users/Captain Lenahan/OneDrive - Georgia Institute of Technology/Fall 2020/Fall2020hw7")
+crime.data <- read.table("uscrime.txt", stringsAsFactors = FALSE, header = TRUE)
+gcredit.data <- read.table("germancredit.txt", stringsAsFactors = FALSE, header = FALSE)
+library(ggplot2)
+library(randomForest)
+library(tree)
+library(caret)
+```
+
+## Question 10.1 a
+  For this question, we are tasked with creating a regression tree model. For this problem, I utilized the tree package in R. First, I created a test and train data set, using about 90% of the data for train and the remaining points for test. I chose this breakdown because of the small amount of data within the USCrime data set. 
+  
+  Next, I created a default model with all the predictor variables using tree(). By plotting this model, we can see its branches and leaves to get an idea of the unpruned breakdown. Surprisingly, not many predictors are used by the tree function by default. This poses a challenge in terms of whether or not to prune the tree, as too few of branches could create a oversimplified model that would not classify points well at all.
+
+```{r tree_model_begin}
+#data prep (create test and train)
+set.seed(12345)
+
+#selects 1/12 of the data points as a sample
+sample.crime.data <- sample(1:nrow(crime.data), size = round(nrow(crime.data) / 12), replace = FALSE)
+# 11/12th of the data
+train.crime.data <- crime.data[-sample.crime.data, ]
+# 1/12 of the data
+test.crime.data <- crime.data[sample.crime.data, ]
+
+
+
+#fit unpruned classification tree with all predictors
+tree.crime <- tree(Crime~., data = crime.data)
+summary(tree.crime)
+
+#check out branch splitting
+tree.crime$frame
+
+plot(tree.crime)  
+  title("Unpruned US Crime Tree Plot")
+  text(tree.crime)
+
+#view splits
+tree.crime
+```
+
+  The next step was to improve this model by using our train and test data sets. Using the train data and then using the CV.TREE() function in R, I was able to get a better idea of how to handle the pruning question. By plotting our cv model, we can more accurately assess the best number of nodes to use for our improved model. This came out to be 4 according to the plot.
+
+```{r tree_mode_improv}
+#Now we will use train/test data to evaluate how good our tree model is:
+set.seed(12345)
+trained.tree.crime <- tree(Crime~., data = train.crime.data)
+summary(trained.tree.crime)
+#used Po1, Pop, LF, NW
+
+
+plot(trained.tree.crime) 
+  title("Unpruned US Crime Tree Plot")
+  text(trained.tree.crime)  
+
+#perform cross validation - find best number of nodes
+# plot indicates 4 has the least amount of error! 4 is a good prune point of nodes
+# set seed for random number generator
+
+cv.crime.tree <- cv.tree(trained.tree.crime)
+summary(cv.crime.tree)
+plot(cv.crime.tree)
+plot(cv.crime.tree$size, sqrt(cv.crime.tree$dev / nrow(train.crime.data)), xlab = "Size", type = "l" , ylab = "RMSE Cross Valid")
+```
+  By using the prune.tree() function and setting best = 4, we can set the pruned model to utilize only 4 nodes. To compare the two models, I did a manual calculation for RMSE (square root of the residuals variance). By using this metric, we can see that the original model did better than the pruned one! So, it looks like that will be our winner. Note: before setting the seed, I noticed several different outcomes. This makes sense as the cross validation uses a random number for the number of folds, and this often resulted in a different outcome when plotting where sometimes 5 or even 7 nodes looked like the lowest point of error.  
+
+*The rmse for this model came out to be 485.54*
+
+
+```{r tree_model_cv}
+#test against new data using the previously discovered 4 nodes fom CV
+pruned.tree.crime <- prune.tree(trained.tree.crime,  best = 4)
+
+#plot the pruned tree with 7 nodes
+plot(pruned.tree.crime) 
+text(pruned.tree.crime)
+title("Pruned US crime tree") 
+summary(pruned.tree.crime)  
+#worse than not pruning at all!!!
+prun.rmse <- sqrt(summary(pruned.tree.crime)$dev / nrow(train.crime.data))
+#unpruned tree model wins the rmse test 
+rmse.tree <- sqrt(summary(trained.tree.crime)$dev / nrow(train.crime.data))
+#simple function to use for predicting
+
+
+#408.6 vs 368.7 for pruned means the pruned of 2 is a better fit! 
+unpruned.tree.pred <- predict(trained.tree.crime, newdata = test.crime.data)
+sqrt(mean((unpruned.tree.pred - test.crime.data$Crime) ^ 2))
+
+
+```
+## Question 10.1 b
+  While searching through https://topepo.github.io/caret/model-training-and-tuning.html#model-training-and-parameter-tuning, I found an extremely helpful function called train() in R that allows for bootsrapping (random sampling with replacement) over 1000 samples. The train function then found the best RMSE provided the training data. This well fitted model was then used to predict against the test data and I calculated for its RMSE which came out to be  428.95! This beats our previous model by a wide margin, as lower RMSE indicates a better model fit!
+  
+```{r forest}
+set.seed(12345)
+  fitted.crime.forest <- train(
+    Crime~., data = train.crime.data, method = 'rf',
+    trControl = trainControl(method = 'boot_all', number = 1000), metric = 'RMSE', importance = TRUE)
+  
+summary(fitted.crime.forest)  
+
+best.forest <- fitted.crime.forest$finalModel  
+best.forest
+
+rf.predict <- predict(fitted.crime.forest, newdata = test.crime.data)
+
+#RMSE:  428.9532
+sqrt(mean((rf.predict - test.crime.data$Crime) ^ 2))
+
+```
+
+## Question 10.2
+
+  As a data analyst in the medical field, one area of concern is HAIs or hospital acquired infections. To combat this, there are many procedures and resources in place to ensure that staff can wash their hands between patient encounters. This data is collected and scored per hospital and being an outlier in this score is very bad for business! To get the probability that the hospital I work at will meet the state mandated criteria for HAIs in one month from now, we could use predictors such as newly onboarded staff, contact positions used, number of hand washing stations, number of doctors, and number of re-admits for HAI related symptoms in order to predict our performance come next month!
+
+
+## Question 10.3
+
+  For question 10.3, We are asked to apply logistic regression to a new dataset "germancredit". The details behind the dataset can be seen here: http://archive.ics.uci.edu/ml/datasets/Statlog+%28German+Credit+Data%29. After studying the dataset, I loaded in the data without headers and realized that the response column was 1 and 2s instead of 1 and 0s. I corrected this with the index/assign functionality in R and then went on to create a sample of the data to use for portioning out a test and train data set. I created my default model with an AIC of 889.1 and then improved on this model using only the significant factors to an AIC of 879.1.
+
+
+```{r attempt, warning=FALSE}
+set.seed(12345)
+
+gcredit.data <- read.table("germancredit.txt", stringsAsFactors = FALSE, header = FALSE)
+#replace 1 and 2s in response column with usable 0/1 values
+
+gcredit.data$V21[gcredit.data$V21 == 1] <- 0
+gcredit.data$V21[gcredit.data$V21 == 2] <- 1
+#selects 1/10 of the data points as a sample
+sample <- sample(1:nrow(gcredit.data ), size = round(nrow(gcredit.data ) / 10), replace = FALSE)
+# 9/10th of the data
+train.gcredit.data <- gcredit.data[-sample, ]
+# 1/10 of the data
+test.gcredit.data <- gcredit.data[sample,  ]
+
+gcredit.glm <- glm(V21~., family = binomial(link = "logit"), data = train.gcredit.data)
+#AIC 889.1
+summary(gcredit.glm)
+
+#Chose significant values V1+V2+V3+V4+V5+V6+V8+V9+V10+V14+V15+V20
+gcredit.glm.improv <- glm(V21~ V1+V2+V3+V4+V5+V6+V8+V9+V10+V14+V15+V20,
+                   family = binomial(link = "logit"), data = train.gcredit.data)
+#AIC 879.1 so better!
+summary(gcredit.glm.improv)
+
+
+train.gcredit.data$V1A13[train.gcredit.data$V1 == "A13"] <- 1
+train.gcredit.data$V1A13[train.gcredit.data$V1 != "A13"] <- 0
+
+#last section before mental breakdown D:
+predict(gcredit.glm.improv, test.gcredit.data[, -21], type = "response")
+
+
+
+```
+

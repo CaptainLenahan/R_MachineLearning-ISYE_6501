@@ -1,0 +1,232 @@
+---
+title: "WK8_HW8"
+author: "Anon Skywalker"
+date: "10/13/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+rm(list = ls())
+setwd("C:/Users/Captain Lenahan/OneDrive - Georgia Institute of Technology/Fall 2020/Fall2020hw8")
+uscrime <- read.table("uscrime.txt", stringsAsFactors = FALSE, header = TRUE)
+# Set seed for reproducibility
+set.seed(1)
+#install.packages("leaps")
+library(caret)
+library(leaps)
+library("DAAG")
+library(glmnet)
+```
+
+## Question 11.1 Stepwise, Lasso, and Elastric Net Variable Selection
+
+# Base Model
+
+To begin, I start with our most default regression model using the uscrime data with all predictors. This will serve as a base model for which we can begin to compare our future models with that will utilize different variable selection tactics.
+
+Base Model Stats:
+
+  1. All Predictors
+  2. AIC of 650
+  3. R-squared of: 0.353
+  
+```{r Base_model}
+set.seed(1)
+lm.crime.default <- lm(Crime~., data = uscrime)
+#summary(lm.crime.default)
+
+# cross validate using 4 folds
+cv.lm.default <- cv.lm(lm.crime.default, data = uscrime, m = 4, plotit = FALSE)
+
+#A function for calculating r-squared for each improved regression model
+R2 <- function(ms) {
+  
+  sse <- ms*nrow(uscrime)
+  sst<- sum((uscrime$Crime - mean(uscrime$Crime))^2)
+  R2 <- 1 - sse/sst
+  #0.615 R-SQUARED
+  return(R2)
+  
+}
+
+#calculate for r-squared for base model
+R2(94720)
+#650
+AIC(lm.crime.default)
+
+```
+  
+# Stepwise begins here:
+
+  Now that we have a base model to compare with, we can dive into the different types of variable selection methods. Beginning with Stepwise regression, where predictive variables are either added or subtracted at each step of the selection process. To achieve stepwise efficiently, I utilized the CARET packages train() function, which sets up a grid of tuning parameters for a number of classification and regression routines, fits each model and calculates a resampling based performance measure. The method= "leapSeq" is the stepwise regression method. The trainControl is a parameter used to apply cross validation with 10 folds onto each model train() comes up with. 
+  
+  After running the stepwise approach, the resulting model seemed to be best fitted with 6 predictors as can be seen by the $bestTune provided by the model. The final model returned by the StepWise approach utilized the M + Ed + Po1 + U2 + Ineq + Prob predictors of which I used in the step.improv model. Comparing this to our base model, it is a improvement in model quality that is notable, with a AIC of 10 points lower. Note: While the coefficients are not the same via this approach, we standardize the method of using the stepwise/lasso/elastic net variable selection processes to take their chosen predictors and use them with lm() to be able to test their AIC and r-squared for better model comparison. This method will be applied to each model.
+  
+  Stepwise Model Results:
+  
+    1. Preds in improv model: M + Ed + Po1 + U2 + Ineq + Prob
+    2. AIC = 640
+    3. R-Squared = 0.671
+  
+
+```{r stepwise}
+
+set.seed(1)
+# Set up repeated k-fold cross-validation
+train.control <- trainControl(method = "cv", number =10)
+#"leapSeq", to fit linear regression with stepwise selection 
+step.model <- train(Crime~., data = uscrime, method = 'leapSeq', 
+                    tuneGrid = data.frame(nvmax = 1:8), trControl = train.control)
+
+#r-Squared of 0.61 for 6 vars!
+step.model$results
+#best # of variables
+step.model$bestTune
+#best model appears to be with 6 predictors! 
+step.final <- step.model$finalModel
+
+
+#* = Significance. Model Chose: M + Ed  Po1  M.F U1  U2 Ineq  Prob
+summary(step.final)
+
+#display final stepwise model coefficients
+coef(step.final, 6)
+#create LM model with newfound variable combination
+step.improv <- lm(Crime~M + Ed + Po1 + U2 + Ineq + Prob, data = uscrime)
+summary(step.improv)
+
+# ms of 48203
+cv.lm.step <- cv.lm(step.improv, data = uscrime, m=4, plotit = FALSE)
+
+#Calculate Rsquared for Stepwise model
+R2(48203)
+#compare AICs between default and improv model: improv wins!
+AIC(step.improv)
+```
+# Lasso Model
+
+  To begin with the lasso model, it is vital that the data is scaled due to the glmnet's need for matrix type data in the x and y parameters. This presented the challenge of not destroying the response column "Crime" and categorical column "So". To prevent this issue, I scaled all columns except for these two and then added them back in. Because of this, the parameter "standardize" was not used in my cv.glmnet model.
+  The lasso approach requires finding the best value of lambda, which I found by both plotting and assessing the model itself. The lasso model chooses 6 more predictors than the stepwise approach. Yet, the predictors chosen tend to show less significance than the original 6, and removing them would just leave you back at where stepwise was with an AIC of 640, 8 points lower (better) than the current LASSO results at an AIC of 648. Comparing this to our previous stepwise and base models, it would appear that the lasso approach is only slightly better than the base model, while being 8 points in AIC worse than the stepwise model. 
+  
+  Lasso Model Results: 
+    
+    1. Preds: All but PO2, LF, and Time. 12 predictors, seems high!
+    2. AIC = 648
+    3. R-Squared = 0.615
+    4. Alpha = 1, Lambda = 6
+
+
+```{r Lasso}
+set.seed(1)
+#scale all data except categorical So and response
+uscrime.scaled = as.data.frame(scale(uscrime[ , -c(2,16)]))
+uscrime.scaled <- cbind(uscrime[,2], uscrime.scaled, uscrime$Crime) 
+# re-insert column for So and Crime
+colnames(uscrime.scaled)[1] <- "So"
+colnames(uscrime.scaled)[16] <- "Crime"
+
+
+scaled.matrix = data.matrix(uscrime.scaled[,-16])
+crime.matrix = data.matrix(uscrime.scaled$Crime)
+
+
+
+lasso.model = cv.glmnet( x = scaled.matrix, 
+                         y = crime.matrix, 
+                         alpha = 1,
+                         nfolds = 6, 
+                         nlambda = 20 , 
+                         type.measure = "mse", 
+                         family = "gaussian")
+
+lasso.model
+summary(lasso.model)
+#plot mean squared error vs lambda. Helps determine which lambda is the best to use.
+#appears to be close to a value of 6. 
+plot(lasso.model)
+
+
+
+#Run again to test those coefficients - a few that were low or negative values
+lasso.improv <- lm(Crime~So+M+Ed+Po1+M.F+U2+Ineq, data = uscrime.scaled)
+summary(lasso.improv)
+
+# cross validate using 4 folds. MS: 56355
+cv.lm.lasso <- cv.lm(lasso.improv, data = uscrime.scaled, m = 4, plotit = FALSE)
+
+#615
+R2(56355)
+#648
+AIC(lasso.improv)
+```
+
+## Elastic Net Model
+
+  For the elastic net approach, the challenge was to find the best value of alpha as well. To do this, I made a basic for-loop to run through the model for different values of alpha. This resulted in an alpha value of 0.42 That I then used to find the value of lambda by creating another elastic model with the best chosen value of alpha. This value came out to be a lambda of 13. The resulting r-squared ended up being 0.42 which should cause for some suspicion. Upon further digging, I have come to believe that the insignificant p-values are the reason behind this low r-squared score. If one were to include only the significant values based off of the p-value significance, you would likely end up with a r-squared closer to what was achieved in lasso or stepwise. 
+  
+  In summary, the best approach for this data set is stepwise! It is also likely that the elastic/lasso models are overfit due to the number of predictors that was chosen by for each approach compared to the data set size. Despite this, it may be that the Lasso and Elastic net methods perform better when predicting a new point/city despite the current model results. One would be able to verify this by splitting the data into test and training sets and then using it to predict on a new point as we have done in past lessons, but this is beyond the scope of this homework. Additionally, I wanted to use as much data as possible for the variable selection process due to the relatively small dataset we are working with. 
+  
+  
+  Elastic Net Results:
+  
+    1. Preds: So+M+Ed+Po1+M.F+Pop+NW+U1+U2+Wealth+Ineq+Prob. Everything but Time. Far more than the previous approaches
+    2. AIC = 645
+    3. R-squared = 0.477
+    4. Alpha = 0.42 and Lambda = 13
+
+```{r Elastic_Net}
+set.seed(1)
+r.squared <- c()
+
+for (i in 0:100) {
+  
+  elastic.model <- cv.glmnet( x = scaled.matrix, 
+                             y = crime.matrix, 
+                             alpha = i/100,
+                             nfolds = 6 , 
+                             type.measure = "mse", 
+                             family = "gaussian")
+  
+  fit.select = which(elastic.model$glmnet.fit$lambda == elastic.model$lambda.min)
+  #Calc for r-squared
+  r.squared <- cbind(r.squared, elastic.model$glmnet.fit$dev.ratio[fit.select])
+  
+}
+r.squared
+
+#now to determine the best value for alpha
+alpha.best <- (which.max(r.squared)-1) /100
+
+alpha.best
+
+elastic.model <- cv.glmnet( x = scaled.matrix, 
+                            y = crime.matrix, 
+                            alpha = alpha.best,
+                            nfolds = 6 , 
+                            nlambda = 20,
+                            type.measure = "mse", 
+                            family = "gaussian")
+
+plot(elastic.model)
+#13 seems to be the best value of lambda according to the model/plot
+elastic.model
+#selects 13 compared, much more than the previous lasso and stepwise approach
+coefficients(elastic.model, s=elastic.model$lambda.min)
+
+elastic.model.improv <- lm(Crime~So+M+Ed+Po1+M.F+Pop+NW+U1+U2+Wealth+Ineq+Prob, data = uscrime)
+summary(elastic.model.improv)
+
+
+# cross validate using 4 folds
+cv.lm.elastic <- cv.lm(elastic.model.improv, data = uscrime, m = 4, plotit = FALSE)
+
+
+AIC(elastic.model.improv)
+
+#0.477 R-SQUARED
+R2(76544)
+```
+
+

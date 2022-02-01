@@ -1,0 +1,65 @@
+---
+title: "WK9_HW9"
+author: "Anon Skywalker"
+date: "10/19/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+#install.packages("FrF2")
+library("FrF2")
+set.seed(1)
+rm(list = ls())
+```
+
+## Question 12.1 Personal D.O.E. Example
+
+  A design of experiments could help me with a current problem that the hospital I work at is experiencing. The problem is that we do not know which predictors to use in a situation where there are many in determining what best predicts patient feedback on a visit. By creating a design of experiments approach here could help in systematically finding the cause-and-effect-relationship between the factors we have available and which affect patient feedback.  
+
+
+## Question 12.2 Fractional Factorial Design
+
+  For this problem, using the FrF2 package in R made it easy to create a survey size using 16 fictitious houses (nruns = 16) and limiting to 10 different yes/no features to have that help in predicting the market value of a house (nfactors = 10). See the below code segment for the output of the FrF2() function with detailed names for each feature. 
+
+```{r FrF2}
+#set up names for housing cost market value predictors
+names <- c("Large Yard", "Solar Roof", "Pool", "termites", "Heated", 
+           "AC", "Bedrooms", "Haunted", "Garage", "Porcelain Fountains")
+
+fract.fact <- FrF2(nruns = 16, nfactors = 10, factor.names = names)
+#display design
+fract.fact
+
+```
+
+
+
+
+## Question 13.1 Distribution Examples
+
+  1. *Bernoulli:* Whether or not I will pass the next midterm in this class.
+  
+  2. *Geometric:* How many times can I watch the Cats movie before mentally breaking down. Similar to the bat breaking example in the lectures, it is possible that I can watch the movie over and over again without any issue, though this is highly unlikely. 
+  
+  3. *Poisson:* The probability of charlie getting the golden ticket in the "Willy Wonka and the Chocolate Factory" movie.
+  
+  4. *Exponential:* The number of chocolate bars sold before each of the 5 golden tickets are found. 
+  
+  5. *Weibull:* How long until a part of a newly purchased packaging machine breaks.
+
+
+## Question 13.2 Poisson Distribution for Airport using Arena Software
+  
+  For the difficult problem of creating an Arena Model to simulate airport security wait times, I was able to achieve a wait time under 15 minutes by using the layout/structure seen in the image below. I made sure to set the mean interval to 0.2 for the interarrival rate on the create block to match the homework instruction for this problem as well. Additionally, I set the mean rate of 0.75 for the "Boarding pass check stand" process block to be EXPO( 0.75 ) with the units set to minutes so that the service time would be appropriately calibrated to the homework problem. Lastly, each personal scanner PCheck(1-4) is set to be on "Uniform" with a distribution between 0.5 and 1 minute. 
+  
+  Now onto the model: this model made use of a two decision blocks, one for whether or not a given person would make it past security (Which I set to be a 90% chance that they do) and the other block for what line they should be sent to after making it past the boarding pass/id check stand. At this point, the "Line Picker" decision block invokes several simple logic statements to send a person to which ever line has the least number of people in it. It does so by comparing line sizes before sending the person to the one that has the minimum number of people waiting in the queue. This logic can also be seen in the first of the two images below.
+  
+  The second image included here has a report of the project with wait times in the unit of hours. It is clear that this layout overachieves the goal of under 15-minute wait times, but when I tested using 3 personal check scanners, the queue for each ended up becoming overloaded and would cause wait times of above 20 minutes. So, despite the cost of an additional check stand, it would make everyone’s lives better to have it for the purpose of creating a efficient airport security model that ensures a wait time under 15 minutes.
+
+
+
+![Arena Airport Model](ArenaModel.png)
+
+![Model Wait Times Report](WaitReport.png)
+
